@@ -4,16 +4,23 @@ This repository hosts all the code, and supplementary materials used in our stud
 
 # Citation
 Please cite our paper if you use any part of this repository for your research:
+
 @article{Contreras2025Preoperative,
+
   title={Preoperative Diagnosis of Glioblastoma Multiforme Using Convolutional Neural Networks},
+  
   author={Contreras, Kebin and Velez, Patricia and Casanova-Carvajal, Oscar and Alvarez, Angel Luis and Urbano-Bojorge, Lorena},
+  
   journal={MDPI Bioengineering},
+  
   year={2025},
+  
   publisher={MDPI}
+  
 }
 
-#License
+# License
 This repository is distributed under the MIT License License.
 
-#Contact
+# Contact
 For any queries related to the repository or our research, please contact us at kacontreras@unicauca.edu.co.
