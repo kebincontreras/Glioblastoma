@@ -1,20 +1,34 @@
-# Preoperative Diagnosis of Glioblastoma Multiforme Using Convolutional Neural Networks
-This repository hosts all the code, and supplementary materials used in our study. It aims to provide a comprehensive resource to support the findings and methodologies employed in our research, fostering further exploration and analysis by the scientific community.
+# Deep Learning for Glioblastoma Multiforme Detection from MRI: A Statistical Analysis for Demographic Bias
 
+This repository contains the codebase, model architecture, and supplementary materials for our research on non-invasive detection of Glioblastoma Multiforme (GBM) using Convolutional Neural Networks (CNNs) applied to T1-weighted MRI scans.
 
-# Citation
-Please cite our paper if you use any part of this repository for your research:
+The study investigates the model’s generalisation capacity across anatomical differences and evaluates demographic fairness using statistical hypothesis testing.
 
-@article{Contreras2025Preoperative,
-  title={Preoperative Diagnosis of Glioblastoma Multiforme Using Convolutional Neural Networks},
-  author={Contreras, Kebin and Velez, Patricia and Casanova-Carvajal, Oscar and Alvarez, Angel Luis and Urbano-Bojorge, Lorena},
-  journal={MDPI Bioengineering},
-  year={2025},
-  publisher={MDPI}
-}
+⚠️ **Note:** This repository is part of an ongoing peer-review process. The final code release and associated post-processing scripts will be published once the manuscript is accepted in the prestigious journal *Applied Sciences (MDPI)*.
 
-# License
-This repository is distributed under the MIT License License.
+## Repository Contents
 
-# Contact
-For any queries related to the repository or our research, please contact us at kacontreras@unicauca.edu.co.
+- `src/`: Source code for data preprocessing, CNN architecture, training, and inference.
+- `notebooks/`: Jupyter notebooks used for analysis and statistical tests.
+- `models/`: Saved model weights and configurations (to be uploaded post-acceptance).
+- `figures/`: Visualisations and performance plots.
+- `docs/`: Supplementary documentation.
+
+## Key Features
+
+- CNN optimised for GBM detection using RSNA-MICCAI dataset.
+- External validation with the Erasmus Glioma Database (EGD).
+- Statistical evaluation of fairness using Shapiro-Wilk, Mann-Whitney U, and Chi-squared tests.
+- Performance metrics include: AUC-ROC, F1-score, Precision, Accuracy, and False Negative Rate.
+
+## License
+
+This project is licensed under the MIT License. See the `LICENSE` file for full details.
+
+## Contact
+
+For academic or technical inquiries, please contact:
+
+**Kebin Contreras**  
+Department of Biology, Universidad del Cauca  
+📧 [kacontreras@unicauca.edu.co](mailto:kacontreras@unicauca.edu.co)
