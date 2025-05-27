@@ -21,6 +21,15 @@ The study investigates the model’s generalisation capacity across anatomical d
 - Statistical evaluation of fairness using Shapiro-Wilk, Mann-Whitney U, and Chi-squared tests.
 - Performance metrics include: AUC-ROC, F1-score, Precision, Accuracy, and False Negative Rate.
 
+## Dataset
+
+The **RSNA-MICCAI Brain Tumor Radiogenomic Classification** dataset, which provides annotated pre-operative T1-weighted MRI scans for glioblastoma analysis.
+
+🧠 **Access the dataset here:**  
+[https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification](https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification)
+
+> Note: You must be logged in to Kaggle and accept the competition rules to download the dataset.
+
 ## License
 
 This project is licensed under the MIT License. See the `LICENSE` file for full details.
