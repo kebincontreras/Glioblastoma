@@ -28,7 +28,7 @@ The **RSNA-MICCAI Brain Tumor Radiogenomic Classification** dataset, which provi
 🧠 **Access the dataset here:**  
 [https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification](https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification)
 
-> Note: You must be logged in to Kaggle and accept the competition rules to download the dataset.
+Note: You must be logged in to Kaggle and accept the competition rules to download the dataset.
 
 ## License
 
