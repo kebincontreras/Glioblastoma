@@ -8,11 +8,13 @@ The study investigates the model’s generalisation capacity across anatomical d
 
 ## Repository Contents
 
-- `src/`: Source code for data preprocessing, CNN architecture, training, and inference.
-- `notebooks/`: Jupyter notebooks used for analysis and statistical tests.
-- `models/`: Saved model weights and configurations (to be uploaded post-acceptance).
-- `figures/`: Visualisations and performance plots.
-- `docs/`: Supplementary documentation.
+- **`main.py`**: Main training script with integrated DICOM data loading and CNN training
+- **`inference.py`**: Inference script for making predictions on new data
+- **`config.py`**: Configuration file with all hyperparameters and paths
+- **`notebooks/`**: Jupyter notebooks used for analysis and statistical tests
+- **`models/`**: Saved model weights and configurations
+- **`figures/`**: Visualizations, performance plots, and results
+- **`requirements.txt`**: Python dependencies
 
 ## Key Features
 
@@ -29,6 +31,53 @@ The **RSNA-MICCAI Brain Tumor Radiogenomic Classification** dataset, which provi
 [https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification](https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification)
 
 Note: You must be logged in to Kaggle and accept the competition rules to download the dataset.
+
+## Usage & Automation Scripts
+
+All project setup, troubleshooting, and maintenance is fully automated. Use the following scripts as needed:
+
+### Main Execution
+- **Windows:**
+  ```bat
+  run_project.bat
+  ```
+- **Linux/macOS:**
+  ```bash
+  ./run_project.sh
+  ```
+
+### Troubleshooting & Utilities (in `scripts/`)
+- **Check system health:**
+  ```bat
+  scripts\health_check.bat     # Windows
+  ./scripts/health_check.sh    # Linux/macOS
+  ```
+- **Full troubleshooting:**
+  ```bat
+  scripts\troubleshoot.bat     # Windows
+  ./scripts/troubleshoot.sh    # Linux/macOS
+  ```
+- **Repair pip installation:**
+  ```bat
+  scripts\fix_pip.bat          # Windows
+  ./scripts/fix_pip.sh         # Linux/macOS
+  ```
+- **Detailed diagnostics:**
+  ```bat
+  scripts\diagnose.bat         # Windows only
+  ```
+- **Cleanup environments and temp files:**
+  ```bat
+  scripts\cleanup.bat          # Windows
+  ./scripts/cleanup.sh         # Linux/macOS
+  ```
+- **Get help and usage info:**
+  ```bat
+  scripts\help.bat             # Windows
+  ./scripts/help.sh            # Linux/macOS
+  ```
+
+> All scripts are self-healing and provide clear instructions if any issue is detected. For most users, simply running `run_project.bat` or `run_project.sh` is enough for a complete setup and execution.
 
 ## License
 
