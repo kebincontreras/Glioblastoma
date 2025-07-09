@@ -513,6 +513,7 @@ class GBMCNN(nn.Module):
         # Flatten and FC will be set dynamically
         self._feature_dim = None
         self.fc1 = None
+        self.fc2 = None
 
     def _get_flattened_size(self, x):
         # Pass a dummy tensor through conv layers to get output size
@@ -532,12 +533,16 @@ class GBMCNN(nn.Module):
         x = self.pool5(F.relu(self.conv5(x)))
         x = x.view(x.size(0), -1)
 
-        # Set FC dynamically on first forward
+        # Set FC layers dynamically on first forward
         if self.fc1 is None or self._feature_dim != x.shape[1]:
             self._feature_dim = x.shape[1]
-            self.fc1 = nn.Linear(self._feature_dim, 1).to(x.device)
+            # First dense layer: features → 128 (ReLU)
+            self.fc1 = nn.Linear(self._feature_dim, 128).to(x.device)
+            # Second dense layer: 128 → 1 (Sigmoid)
+            self.fc2 = nn.Linear(128, 1).to(x.device)
 
-        x = torch.sigmoid(self.fc1(x))
+        x = F.relu(self.fc1(x))
+        x = torch.sigmoid(self.fc2(x))
         return x
 
 def build_cnn_model():
@@ -705,6 +710,14 @@ def train_model(X_train, y_train):
         if best_fold_val_loss < best_val_loss:
             best_val_loss = best_fold_val_loss
             best_model = build_cnn_model()
+            
+            # Initialize fc1 and fc2 layers by doing a dummy forward pass
+            # This ensures both layers exist before loading the state dict
+            best_model.to(device)  # Move model to device first
+            with torch.no_grad():
+                dummy_input = torch.randn(1, 1, 512, 512).to(device)
+                _ = best_model(dummy_input)  # This will create the fc1 and fc2 layers
+            
             best_model.load_state_dict(best_fold_model_state)
             best_model = best_model.to('cpu')  # Move to CPU to save GPU memory
         
