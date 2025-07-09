@@ -45,6 +45,11 @@ All project setup, troubleshooting, and maintenance is fully automated. Use the 
   ```bash
   ./run_project.sh
   ```
+  
+  > **Note:** If you encounter permission errors on Linux/macOS, first make the script executable by running:
+  > ```bash
+  > chmod +x run_project.sh
+  > ```
 
 ### Troubleshooting & Utilities (in `scripts/`)
 - **Check system health:**
