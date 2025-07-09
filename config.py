@@ -12,9 +12,9 @@ FIGURES_PATH = './figures/'
 
 # Data preprocessing parameters
 IMAGE_SIZE = 512
-SCALE = 0.8
+SCALE = 1.0
 NUM_SLICES = 8
-MRI_TYPE = "T1w"  # Options: "FLAIR", "T1w", "T1wCE", "T2w"
+MRI_TYPE = "T1w"
 
 # Model training parameters
 BATCH_SIZE = 64
@@ -24,11 +24,11 @@ PATIENCE = 120
 NUM_FOLDS = 5
 
 # Model architecture parameters
-DROPOUT_RATE = 0.5
 NEGATIVE_SLOPE = 0.01  # For LeakyReLU
 
 # Problematic samples to exclude (from original project)
-EXCLUDE_SAMPLES = [109, 123, 709]
+# EXCLUDE_SAMPLES = [109, 123, 709]
+EXCLUDE_SAMPLES = []  # No samples excluded by default
 
 # Random seed for reproducibility
 RANDOM_SEED = 42

@@ -513,7 +513,6 @@ class GBMCNN(nn.Module):
         # Flatten and FC will be set dynamically
         self._feature_dim = None
         self.fc1 = None
-        self.dropout = nn.Dropout(DROPOUT_RATE)
 
     def _get_flattened_size(self, x):
         # Pass a dummy tensor through conv layers to get output size
@@ -538,7 +537,6 @@ class GBMCNN(nn.Module):
             self._feature_dim = x.shape[1]
             self.fc1 = nn.Linear(self._feature_dim, 1).to(x.device)
 
-        x = self.dropout(x)
         x = torch.sigmoid(self.fc1(x))
         return x
 
@@ -572,9 +570,15 @@ def load_existing_model(model_path=None):
 def train_model(X_train, y_train):
     """
     Train the CNN model using 5-fold cross-validation with CUDA support.
-    X_train: Preprocessed images of shape (num_patients, 8, 512, 512, 1)
+    Memory-efficient implementation that frees memory after each fold.
+    
+    X_train: Preprocessed images of shape (num_patients, 8, 512, 512)
     y_train: Binary labels (0 or 1) for GBM detection
     """
+    # Convert to float32 to save memory (half the memory of float64)
+    X_train = X_train.astype(np.float32)
+    y_train = y_train.astype(np.float32)
+    
     # Check for CUDA availability
     device = torch.device('cuda' if (torch.cuda.is_available() and USE_CUDA) else 'cpu')
     print(f"Using device: {device}")
@@ -584,26 +588,36 @@ def train_model(X_train, y_train):
     
     kf = KFold(n_splits=NUM_FOLDS, shuffle=True, random_state=RANDOM_SEED)
     histories = []
-    
-    # Reshape to treat each slice as a sample (num_patients * 8, 1, 512, 512)
-    X_flat = X_train.reshape(-1, 1, 512, 512)  # PyTorch format: (N, C, H, W)
-    y_flat = np.repeat(y_train, 8)  # Repeat labels for each slice
+    best_model = None  # Store the best model across all folds
+    best_val_loss = float('inf')
     
     for fold, (train_idx, val_idx) in enumerate(kf.split(X_train)):
-        print(f"\nTraining Fold {fold + 1}/5")
+        print(f"\nTraining Fold {fold + 1}/{NUM_FOLDS}")
         
-        # Index into flattened arrays
-        train_slice_idx = np.concatenate([np.arange(i * 8, (i + 1) * 8) for i in train_idx])
-        val_slice_idx = np.concatenate([np.arange(i * 8, (i + 1) * 8) for i in val_idx])
+        # Create fold-specific data (memory efficient approach)
+        # Only create the data needed for this fold, not all folds at once
+        X_train_fold = X_train[train_idx]  # Shape: (train_patients, 8, 512, 512)
+        X_val_fold = X_train[val_idx]      # Shape: (val_patients, 8, 512, 512)
+        y_train_fold = y_train[train_idx]
+        y_val_fold = y_train[val_idx]
         
-        X_tr, X_val = X_flat[train_slice_idx], X_flat[val_slice_idx]
-        y_tr, y_val = y_flat[train_slice_idx], y_flat[val_slice_idx]
+        # Reshape only the current fold data
+        X_tr = X_train_fold.reshape(-1, 1, 512, 512)  # (train_patients*8, 1, 512, 512)
+        X_val = X_val_fold.reshape(-1, 1, 512, 512)   # (val_patients*8, 1, 512, 512)
+        y_tr = np.repeat(y_train_fold, 8)  # Repeat labels for each slice
+        y_val = np.repeat(y_val_fold, 8)
+        
+        # Free intermediate fold arrays immediately
+        del X_train_fold, X_val_fold, y_train_fold, y_val_fold
         
         # Convert to PyTorch tensors and move to device
         X_tr_tensor = torch.FloatTensor(X_tr).to(device)
         y_tr_tensor = torch.FloatTensor(y_tr).unsqueeze(1).to(device)
         X_val_tensor = torch.FloatTensor(X_val).to(device)
         y_val_tensor = torch.FloatTensor(y_val).unsqueeze(1).to(device)
+        
+        # Free numpy arrays after tensor creation
+        del X_tr, X_val, y_tr, y_val
         
         # Create data loaders
         train_dataset = TensorDataset(X_tr_tensor, y_tr_tensor)
@@ -621,7 +635,7 @@ def train_model(X_train, y_train):
         val_losses = []
         train_accuracies = []
         val_accuracies = []
-        best_val_loss = float('inf')
+        best_fold_val_loss = float('inf')
         patience_counter = 0
         
         for epoch in range(MAX_EPOCHS):
@@ -670,22 +684,29 @@ def train_model(X_train, y_train):
             train_accuracies.append(train_acc)
             val_accuracies.append(val_acc)
             
-            # Early stopping
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
+            # Early stopping and best model tracking
+            if val_loss < best_fold_val_loss:
+                best_fold_val_loss = val_loss
                 patience_counter = 0
-                # Save best model state
-                best_model_state = model.state_dict().copy()
+                # Save best model state for this fold
+                best_fold_model_state = model.state_dict().copy()
             else:
                 patience_counter += 1
                 if patience_counter >= PATIENCE:
                     print(f"Early stopping at epoch {epoch + 1}")
-                    model.load_state_dict(best_model_state)
+                    model.load_state_dict(best_fold_model_state)
                     break
             
             if epoch % 10 == 0:
                 print(f"Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, "
                       f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        
+        # Check if this fold's model is the best overall
+        if best_fold_val_loss < best_val_loss:
+            best_val_loss = best_fold_val_loss
+            best_model = build_cnn_model()
+            best_model.load_state_dict(best_fold_model_state)
+            best_model = best_model.to('cpu')  # Move to CPU to save GPU memory
         
         # Store history for this fold
         fold_history = {
@@ -695,8 +716,29 @@ def train_model(X_train, y_train):
             'val_accuracy': val_accuracies
         }
         histories.append(fold_history)
+        
+        # Explicit memory cleanup after each fold
+        del X_tr_tensor, y_tr_tensor, X_val_tensor, y_val_tensor
+        del train_dataset, val_dataset, train_loader, val_loader
+        del model, criterion, optimizer
+        del train_losses, val_losses, train_accuracies, val_accuracies
+        del best_fold_model_state
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
+        
+        # Clear GPU cache if using CUDA
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
+        print(f"Fold {fold + 1} completed. Memory cleaned up.")
     
-    return model, histories
+    # Move best model back to device for final return
+    if best_model is not None:
+        best_model = best_model.to(device)
+    
+    return best_model, histories
 
 def plot_training_results(histories):
     """
