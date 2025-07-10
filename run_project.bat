@@ -187,7 +187,7 @@ if %NEED_NEW_ENV%==1 (
         if %errorlevel% neq 0 (
             echo  Environment creation failed completely
             echo.
-            echo SOLUTION: Use scripts\diagnose.bat for automatic problem solving
+            echo SOLUTION: Use scripts\diagnose.bat or scripts\troubleshoot.bat for automatic problem solving
             pause
             exit /b 1
         )
@@ -217,7 +217,7 @@ if %NEED_NEW_ENV%==1 (
     ) else (
         echo  Environment creation verification failed
         echo.
-        echo SOLUTION: Use scripts\diagnose.bat for automatic problem solving
+        echo SOLUTION: Use scripts\diagnose.bat or scripts\troubleshoot.bat for automatic problem solving
         pause
         exit /b 1
     )
@@ -230,7 +230,7 @@ call "%ENV_NAME%\Scripts\activate.bat"
 if %errorlevel% neq 0 (
     echo  Failed to activate environment
     echo.
-    echo SOLUTION: Use run_universal.bat for automatic problem solving
+    echo SOLUTION: Use scripts\diagnose.bat or scripts\troubleshoot.bat for problem solving
     pause
     exit /b 1
 )

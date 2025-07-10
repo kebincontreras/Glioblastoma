@@ -13,11 +13,21 @@ from src.utils import (
     load_rsna_data_with_cache,
     preprocess_images, 
     train_model, 
-    plot_training_results
+    plot_training_results,
+    get_training_summary,
+    check_dependencies
 )
 
 # Main Execution
 if __name__ == "__main__":
+    # Print training configuration and check dependencies
+    deps_ok = get_training_summary()
+    
+    if not deps_ok:
+        print("\n Missing dependencies detected. Please install requirements first:")
+        print("   pip install -r requirements.txt")
+        exit(1)
+    
     # Ensure directories exist
     ensure_directories()
     
@@ -46,10 +56,10 @@ if __name__ == "__main__":
         print("Applying preprocessing to simulated data...")
         X_rsna_processed = preprocess_images(X_rsna, slices_per_patient=NUM_SLICES)
     else:
-        print(f"✅ Successfully loaded preprocessed RSNA data: {X_rsna_processed.shape}")
-        print(f"📊 Labels distribution: {np.bincount(y_rsna)}")
+        print(f"Successfully loaded preprocessed RSNA data: {X_rsna_processed.shape}")
+        print(f"Labels distribution: {np.bincount(y_rsna)}")
     
-    print(f"🎯 Final preprocessed data shape: {X_rsna_processed.shape}")
+    print(f"Final preprocessed data shape: {X_rsna_processed.shape}")
     
     # Train Model
     print("\nStarting model training...")
