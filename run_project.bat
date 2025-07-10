@@ -149,11 +149,149 @@ if exist "%ENV_NAME%\Scripts\python.exe" (
     ) else (
         echo Environment can be activated
         
-        REM Step 2: Check if all required packages are installed
-        echo Checking required packages...
-        "%ENV_NAME%\Scripts\python.exe" -c "import torch, torchvision, numpy, sklearn, matplotlib, pandas, pydicom, cv2, tqdm; print('All packages available')" >nul 2>&1
+        REM Step 2: Check if all required packages are installed using requirements.txt
+        echo Checking required packages from requirements.txt...
+        "%ENV_NAME%\Scripts\python.exe" -c "
+import sys
+import os
+
+# Package mapping from import name to display name
+package_mapping = {
+    'torch': 'PyTorch',
+    'torchvision': 'TorchVision',
+    'numpy': 'NumPy',
+    'sklearn': 'Scikit-learn',
+    'matplotlib': 'Matplotlib',
+    'pandas': 'Pandas',
+    'pydicom': 'PyDicom',
+    'cv2': 'OpenCV-Python',
+    'tqdm': 'TQDM',
+    'PIL': 'Pillow',
+    'scipy': 'SciPy'
+}
+
+# Read requirements.txt to get expected packages
+expected_packages = []
+if os.path.exists('requirements.txt'):
+    with open('requirements.txt', 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                pkg_name = line.split('>=')[0].split('==')[0].split('[')[0].strip()
+                # Convert package name to import name
+                if pkg_name == 'opencv-python':
+                    expected_packages.append('cv2')
+                elif pkg_name == 'scikit-learn':
+                    expected_packages.append('sklearn')
+                elif pkg_name == 'pillow':
+                    expected_packages.append('PIL')
+                else:
+                    expected_packages.append(pkg_name)
+
+missing = []
+for module in expected_packages:
+    display_name = package_mapping.get(module, module)
+    try:
+        if module == 'sklearn':
+            import sklearn
+        elif module == 'cv2':
+            import cv2
+        elif module == 'PIL':
+            import PIL
+        else:
+            __import__(module)
+        print(f'  {display_name}: OK')
+        sys.stdout.flush()
+    except ImportError:
+        print(f'  {display_name}: MISSING')
+        sys.stdout.flush()
+        missing.append(display_name)
+
+# Special check for tqdm.auto (used by huggingface_hub)
+try:
+    from tqdm.auto import tqdm as tqdm_auto
+    print('  tqdm.auto: OK')
+    sys.stdout.flush()
+except ImportError:
+    print('  tqdm.auto: MISSING')
+    sys.stdout.flush()
+    missing.append('tqdm.auto')
+
+if missing:
+    print(f'Missing: {len(missing)} packages')
+    sys.exit(1)
+else:
+    print('All packages installed!')
+    sys.exit(0)
+" >nul 2>&1
         if %errorlevel% neq 0 (
-            echo  Some required packages are missing
+            echo  Some required packages are missing - running detailed check:
+            "%ENV_NAME%\Scripts\python.exe" -c "
+import sys
+import os
+
+# Package mapping from import name to display name
+package_mapping = {
+    'torch': 'PyTorch',
+    'torchvision': 'TorchVision',
+    'numpy': 'NumPy',
+    'sklearn': 'Scikit-learn',
+    'matplotlib': 'Matplotlib',
+    'pandas': 'Pandas',
+    'pydicom': 'PyDicom',
+    'cv2': 'OpenCV-Python',
+    'tqdm': 'TQDM',
+    'PIL': 'Pillow',
+    'scipy': 'SciPy'
+}
+
+# Read requirements.txt to get expected packages
+expected_packages = []
+if os.path.exists('requirements.txt'):
+    with open('requirements.txt', 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                pkg_name = line.split('>=')[0].split('==')[0].split('[')[0].strip()
+                # Convert package name to import name
+                if pkg_name == 'opencv-python':
+                    expected_packages.append('cv2')
+                elif pkg_name == 'scikit-learn':
+                    expected_packages.append('sklearn')
+                elif pkg_name == 'pillow':
+                    expected_packages.append('PIL')
+                else:
+                    expected_packages.append(pkg_name)
+
+missing = []
+for module in expected_packages:
+    display_name = package_mapping.get(module, module)
+    try:
+        if module == 'sklearn':
+            import sklearn
+        elif module == 'cv2':
+            import cv2
+        elif module == 'PIL':
+            import PIL
+        else:
+            __import__(module)
+        print(f'  {display_name}: OK')
+        sys.stdout.flush()
+    except ImportError:
+        print(f'  {display_name}: MISSING')
+        sys.stdout.flush()
+        missing.append(display_name)
+
+# Special check for tqdm.auto (used by huggingface_hub)
+try:
+    from tqdm.auto import tqdm as tqdm_auto
+    print('  tqdm.auto: OK')
+    sys.stdout.flush()
+except ImportError:
+    print('  tqdm.auto: MISSING')
+    sys.stdout.flush()
+    missing.append('tqdm.auto')
+"
             set NEED_INSTALL_PACKAGES=1
         ) else (
             echo All required packages are installed
@@ -512,6 +650,63 @@ echo Trying 7-Zip extraction...
     )
 
 :after_extraction
+
+REM Check dependencies before running main script
+echo ============================================
+echo   Checking Project Dependencies
+echo ============================================
+
+REM Check if requirements.txt exists
+if not exist "requirements.txt" (
+    echo ERROR: requirements.txt not found!
+    pause
+    exit /b 1
+)
+
+REM Check Python dependencies
+echo Verifying Python packages...
+python -c "
+import sys
+import subprocess
+
+# Read requirements.txt
+with open('requirements.txt', 'r') as f:
+    requirements = [line.strip() for line in f.readlines() if line.strip() and not line.startswith('#')]
+
+print('\\n' + '='*50)
+print('DEPENDENCY CHECK RESULTS')
+print('='*50)
+
+all_good = True
+for req in requirements:
+    package = req.split('=')[0].split('>')[0].split('<')[0].split('!')[0]
+    try:
+        __import__(package)
+        print(f'✓ {package:20} OK')
+        sys.stdout.flush()
+    except ImportError:
+        print(f'✗ {package:20} MISSING')
+        all_good = False
+        sys.stdout.flush()
+
+print('='*50)
+if all_good:
+    print('All dependencies are satisfied!')
+else:
+    print('Some dependencies are missing!')
+    print('Please run: pip install -r requirements.txt')
+    sys.exit(1)
+"
+
+if %errorlevel% neq 0 (
+    echo ============================================
+    echo   Dependency check failed!
+    echo ============================================
+    echo Please install missing dependencies with:
+    echo   pip install -r requirements.txt
+    pause
+    exit /b 1
+)
 
 REM Run the main script
 echo ============================================

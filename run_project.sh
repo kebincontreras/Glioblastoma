@@ -515,6 +515,71 @@ print(f'\nExtraction completed in {end-start:.1f} seconds.')
         fi
     fi
 
+    # Check dependencies before running main script
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}  Checking Project Dependencies${NC}"
+    echo -e "${BLUE}============================================${NC}"
+
+    # Check if requirements.txt exists
+    if [ ! -f "requirements.txt" ]; then
+        echo -e "${RED}ERROR: requirements.txt not found!${NC}"
+        exit 1
+    fi
+
+    # Check Python dependencies
+    echo -e "${YELLOW}Verifying Python packages...${NC}"
+    $PYTHON_CMD -c "
+import sys
+import subprocess
+
+# Read requirements.txt
+with open('requirements.txt', 'r') as f:
+    requirements = [line.strip() for line in f.readlines() if line.strip() and not line.startswith('#')]
+
+print('\\n' + '='*50)
+print('DEPENDENCY CHECK RESULTS')
+print('='*50)
+
+all_good = True
+for req in requirements:
+    package = req.split('=')[0].split('>')[0].split('<')[0].split('!')[0]
+    # Handle special package mappings
+    if package == 'opencv-python':
+        import_name = 'cv2'
+    elif package == 'scikit-learn':
+        import_name = 'sklearn'
+    elif package == 'pillow':
+        import_name = 'PIL'
+    else:
+        import_name = package
+    
+    try:
+        __import__(import_name)
+        print(f'✓ {package:20} OK')
+        sys.stdout.flush()
+    except ImportError:
+        print(f'✗ {package:20} MISSING')
+        all_good = False
+        sys.stdout.flush()
+
+print('='*50)
+if all_good:
+    print('All dependencies are satisfied!')
+else:
+    print('Some dependencies are missing!')
+    print('Please run: pip install -r requirements.txt')
+    sys.exit(1)
+"
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}============================================${NC}"
+        echo -e "${RED}  Dependency check failed!${NC}"
+        echo -e "${RED}============================================${NC}"
+        echo -e "${RED}Please install missing dependencies with:${NC}"
+        echo -e "${RED}  pip install -r requirements.txt${NC}"
+        exit 1
+    fi
+
     # Run the main script
     echo -e "${BLUE}============================================${NC}"
     echo -e "${BLUE}  Starting GBM Detection Training${NC}"
