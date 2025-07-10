@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-from main import GBMCNN, load_dicom_images_sequence, preprocess_images
+from src.utils import GBMCNN, load_dicom_images_sequence, preprocess_images
 from config import *
 import pandas as pd
 

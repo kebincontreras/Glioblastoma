@@ -22,7 +22,7 @@ from tensorflow import keras
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras import applications 
 
-#Enlace de la base de datos
+# Database link
 path = '/kaggle/input/rsna-miccai-brain-tumor-radiogenomic-classification/'
 os.listdir(path)
 
@@ -32,13 +32,13 @@ samp_subm  = pd.read_csv(path+'sample_submission.csv')
 
 print(train_data.head(7)),print(samp_subm.head())
 
-#Imprimir tamaño de carpetas por TRAIN Y TEST
+# Print folder size for TRAIN and TEST
 print('Samples train:', len(train_data))
 print('Samples test:', len(samp_subm))
 
 train_data.head(7)
 
-## analisis de datos faltantes
+## Missing data analysis
 print(pd.isnull(train_data).sum()) 
 print('___________')
 print(pd.isnull(samp_subm ).sum())
@@ -60,7 +60,38 @@ train_data.hist(column="MGMT_value")
 
 samp_subm.head()
 
-#analizar una carpeta 100--->00150
+# Analyze a folder 100--->00150
 folder = str(train_data.loc[100, 'BraTS21ID']).zfill(5)
-## CONTENIDO DE LAS CARPETAS
+## FOLDER CONTENTS
 os.listdir(path+'train/'+folder)
+
+## FLAIR IMAGES
+def plot_examples(row = 0, cat = 'FLAIR'): 
+    folder = str(train_data.loc[row, 'BraTS21ID']).zfill(5)
+    path_file = ''.join([path, 'train/', folder, '/', cat, '/'])
+    images = os.listdir(path_file)
+    
+    fig, axs = plt.subplots(1, 5, figsize=(30, 30))
+    fig.subplots_adjust(hspace = .2, wspace=.2)
+    axs = axs.ravel()
+    
+    for num in range(5):
+        data_file = dicom.dcmread(path_file+images[num])
+        img = data_file.pixel_array
+        axs[num].imshow(img, cmap='gray')
+        axs[num].set_title(cat+' '+images[num])
+        axs[num].set_xticklabels([])
+        axs[num].set_yticklabels([])
+        
+row = 0
+plot_examples(row = row, cat = 'FLAIR')
+
+# Data
+data_directory = '../input/rsna-miccai-brain-tumor-radiogenomic-classification/'
+train_df = pd.read_csv(data_directory+"train_labels.csv")
+train_df['BraTS21ID5'] = [format(x, '05d') for x in train_df.BraTS21ID]
+train_df.head(3)
+test = pd.read_csv(
+    data_directory+'sample_submission.csv')
+
+test['BraTS21ID5'] = [format(x, '05d') for x in test.BraTS21ID]

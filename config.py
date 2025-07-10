@@ -27,7 +27,7 @@ NUM_FOLDS = 5
 NEGATIVE_SLOPE = 0.01  # For LeakyReLU
 
 # Problematic samples to exclude (from original project)
-# EXCLUDE_SAMPLES = [109, 123, 709]
+# EXCLUDE_SAMPLES = [109, 123, 709] (for example)
 EXCLUDE_SAMPLES = []  # No samples excluded by default
 
 # Random seed for reproducibility

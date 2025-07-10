@@ -190,9 +190,8 @@ def load_dicom_image(path, img_size=IMAGE_SIZE, scale=SCALE):
         # Resize to target size
         img = cv2.resize(img, (img_size, img_size))
         
-        # Normalize image
-        if np.std(img) > 0:
-            img = (img - np.mean(img)) / np.std(img)
+        # Normalize image to 0-1 range (divide by 255)
+        img = img.astype(np.float32) / 255.0
         
         return img
     except Exception as e:
@@ -292,7 +291,7 @@ def load_rsna_data(data_path=DATA_PATH, mri_type=MRI_TYPE, split="train"):
         return X_images, y, X_ids
     except Exception as e:
         print(f"Error loading RSNA data: {e}")
-        print("No se pudo cargar el dataset. Abortando ejecución.")
+        print("Could not load the dataset. Aborting execution.")
         import sys
         sys.exit(1)
 
@@ -357,20 +356,13 @@ def calculate_information_content(img):
     Phase 4: Calculate information content using binary mask methodology.
     
     Args:
-        img: 2D MRI slice (normalized values)
+        img: 2D MRI slice (normalized to 0-1 range)
         
     Returns:
         float: Information content score (area of non-zero pixels after binary conversion)
     """
-    # Convert image to 0-255 range for binary mask application
-    img_normalized = img.copy()
-    
-    # Normalize to 0-255 range
-    if np.max(img_normalized) > np.min(img_normalized):
-        img_255 = ((img_normalized - np.min(img_normalized)) / 
-                  (np.max(img_normalized) - np.min(img_normalized)) * 255).astype(np.uint8)
-    else:
-        img_255 = np.zeros_like(img_normalized, dtype=np.uint8)
+    # Convert image to 0-255 range for binary mask application (multiply by 255)
+    img_255 = (img * 255.0).astype(np.uint8)
     
     # Apply binary mask: pixels > 1 → 1, pixels ≤ 1 → 0
     binary_mask = (img_255 > 1).astype(np.uint8)
@@ -429,14 +421,11 @@ def preprocess_images(images, slices_per_patient=8):
         # PHASE 2: Resize all images to 512×512 with proper padding/resizing
         resized_slices = []
         for img in non_black_slices:
-            # Normalize image first (as done in original DICOM loading)
-            if np.std(img) > 0:
-                normalized_img = (img - np.mean(img)) / np.std(img)
-            else:
-                normalized_img = img
+            # Normalize image to 0-1 range (divide by 255) - as used in the paper
+            img_normalized = img.astype(np.float32) / 255.0
             
             # Resize with padding methodology
-            resized_img = resize_with_padding(normalized_img, target_size=512)
+            resized_img = resize_with_padding(img_normalized, target_size=512)
             resized_slices.append(resized_img)
         
         # PHASE 3 & 4: Standardize to exactly 8 images per patient
@@ -484,7 +473,7 @@ def preprocess_images(images, slices_per_patient=8):
         print(f"  Phase 1 - Black image removal:")
         print(f"    - Original images: {total_original_images}")
         print(f"    - Black images removed: {total_black_images_removed}")
-        print(f"    - Removal percentage: {removal_percentage:.1f}% (target: 27.7%)")
+        print(f"    - Removal percentage: {removal_percentage:.1f}%")
         print(f"  Phase 2 - All images resized to 512×512 with padding")
         print(f"  Phase 3 - Standardized to {slices_per_patient} images per patient")
         print(f"  Phase 4 - Applied binary mask for information content selection")
@@ -577,8 +566,16 @@ def train_model(X_train, y_train):
     Train the CNN model using 5-fold cross-validation with CUDA support.
     Memory-efficient implementation that frees memory after each fold.
     
-    X_train: Preprocessed images of shape (num_patients, 8, 512, 512)
-    y_train: Binary labels (0 or 1) for GBM detection
+    IMPORTANT: This function now calculates patient-level accuracy for validation
+    (as per the paper methodology), not slice-level accuracy.
+    
+    Args:
+        X_train: Preprocessed images of shape (num_patients, 8, 512, 512)
+        y_train: Binary labels (0 or 1) for GBM detection per patient
+        
+    Returns:
+        best_model: Best trained model across all folds
+        histories: Training histories with patient-level validation accuracy
     """
     # Convert to float32 to save memory (half the memory of float64)
     X_train = X_train.astype(np.float32)
@@ -667,6 +664,8 @@ def train_model(X_train, y_train):
             val_loss = 0.0
             val_correct = 0
             val_total = 0
+            val_predictions = []
+            val_true_labels = []
             
             with torch.no_grad():
                 for batch_X, batch_y in val_loader:
@@ -677,17 +676,28 @@ def train_model(X_train, y_train):
                     predicted = (outputs > 0.5).float()
                     val_total += batch_y.size(0)
                     val_correct += (predicted == batch_y).sum().item()
+                    
+                    # Store predictions for patient-level accuracy calculation
+                    val_predictions.extend(predicted.cpu().numpy().flatten())
+                    val_true_labels.extend(batch_y.cpu().numpy().flatten())
             
             # Calculate metrics
             train_loss /= len(train_loader)
             val_loss /= len(val_loader)
-            train_acc = train_correct / train_total
-            val_acc = val_correct / val_total
+            train_acc = train_correct / train_total  # Slice-level accuracy
+            val_acc = val_correct / val_total  # Slice-level accuracy
+            
+            # Calculate patient-level accuracy for validation
+            val_patient_acc = calculate_patient_level_accuracy(
+                np.array(val_predictions), 
+                np.array(val_true_labels), 
+                len(val_idx)
+            )
             
             train_losses.append(train_loss)
             val_losses.append(val_loss)
-            train_accuracies.append(train_acc)
-            val_accuracies.append(val_acc)
+            train_accuracies.append(train_acc)  # Slice-level for training
+            val_accuracies.append(val_patient_acc)  # Patient-level for validation
             
             # Early stopping and best model tracking
             if val_loss < best_fold_val_loss:
@@ -703,8 +713,8 @@ def train_model(X_train, y_train):
                     break
             
             if epoch % 10 == 0:
-                print(f"Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, "
-                      f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+                print(f"Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc (slice): {train_acc:.4f}, "
+                      f"Val Loss: {val_loss:.4f}, Val Acc (patient): {val_patient_acc:.4f}")
         
         # Check if this fold's model is the best overall
         if best_fold_val_loss < best_val_loss:
@@ -772,8 +782,8 @@ def plot_training_results(histories):
     
     # Plot accuracy
     plt.subplot(1, 3, 1)
-    plt.plot(last_fold['accuracy'], label='Training Accuracy', linewidth=2)
-    plt.plot(last_fold['val_accuracy'], label='Validation Accuracy', linewidth=2)
+    plt.plot(last_fold['accuracy'], label='Training Accuracy (slice-level)', linewidth=2)
+    plt.plot(last_fold['val_accuracy'], label='Validation Accuracy (patient-level)', linewidth=2)
     plt.title('Model Accuracy (Last Fold)', fontsize=14, fontweight='bold')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
@@ -814,15 +824,15 @@ def plot_training_results(histories):
     
     final_train_acc = last_fold['accuracy'][-1]
     final_val_acc = last_fold['val_accuracy'][-1]
-    print(f"Final Training Accuracy (Last Fold): {final_train_acc:.4f}")
-    print(f"Final Validation Accuracy (Last Fold): {final_val_acc:.4f}")
+    print(f"Final Training Accuracy (Last Fold): {final_train_acc:.4f} (slice-level)")
+    print(f"Final Validation Accuracy (Last Fold): {final_val_acc:.4f} (patient-level)")
     
     # Calculate comprehensive statistics across all folds
     all_val_accs = [fold['val_accuracy'][-1] for fold in histories]
     all_val_losses = [fold['val_loss'][-1] for fold in histories]
     
     print(f"\nCross-Validation Results ({NUM_FOLDS}-Fold):")
-    print(f"Average Validation Accuracy: {np.mean(all_val_accs):.4f} ± {np.std(all_val_accs):.4f}")
+    print(f"Average Validation Accuracy (Patient-level): {np.mean(all_val_accs):.4f} ± {np.std(all_val_accs):.4f}")
     print(f"Average Validation Loss: {np.mean(all_val_losses):.4f} ± {np.std(all_val_losses):.4f}")
     print(f"Best Fold Accuracy: {np.max(all_val_accs):.4f}")
     print(f"Worst Fold Accuracy: {np.min(all_val_accs):.4f}")
@@ -853,3 +863,52 @@ def plot_training_results(histories):
     print(f"Detailed results saved to: {results_path}")
     
     return results_dict
+
+# IMPORTANT NOTE ON ACCURACY CALCULATION:
+# =====================================
+# This implementation now correctly calculates patient-level accuracy for validation,
+# matching the methodology described in the paper. The key differences are:
+#
+# 1. TRAINING ACCURACY: Calculated at slice-level (each slice treated independently)
+# 2. VALIDATION ACCURACY: Calculated at patient-level (slices aggregated per patient)
+#    - Each patient's 8 slices are aggregated using majority vote (>0.5 threshold)
+#    - Final accuracy compares patient predictions vs. patient true labels
+#
+# This ensures that the reported validation accuracy matches the paper's methodology
+# and should yield results closer to the reported 61% ± 0.3.
+
+def calculate_patient_level_accuracy(predictions, true_labels, patients_per_fold):
+    """
+    Calculate accuracy at patient level by aggregating slice predictions.
+    
+    Args:
+        predictions: Array of slice-level predictions (0 or 1)
+        true_labels: Array of slice-level true labels (0 or 1) 
+        patients_per_fold: Number of patients in this fold
+        
+    Returns:
+        float: Patient-level accuracy
+    """
+    # Each patient has 8 slices, so we need to aggregate predictions
+    slices_per_patient = 8
+    patient_predictions = []
+    patient_true_labels = []
+    
+    for patient_idx in range(patients_per_fold):
+        start_idx = patient_idx * slices_per_patient
+        end_idx = start_idx + slices_per_patient
+        
+        # Get predictions for this patient's slices
+        patient_slice_preds = predictions[start_idx:end_idx]
+        patient_slice_labels = true_labels[start_idx:end_idx]
+        
+        # Aggregate: if majority of slices predict positive, patient is positive
+        patient_pred = 1 if np.mean(patient_slice_preds) > 0.5 else 0
+        patient_true = patient_slice_labels[0]  # All slices have same patient label
+        
+        patient_predictions.append(patient_pred)
+        patient_true_labels.append(patient_true)
+    
+    # Calculate patient-level accuracy
+    patient_accuracy = np.mean(np.array(patient_predictions) == np.array(patient_true_labels))
+    return patient_accuracy
