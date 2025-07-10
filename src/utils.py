@@ -105,37 +105,6 @@ def load_preprocessed_data(cache_path):
         print(f"❌ Error loading preprocessed data from cache: {e}")
         return None
 
-def clear_cache(mri_type=None):
-    """
-    Clear preprocessed data cache files.
-    
-    Args:
-        mri_type: If specified, only clear cache for this MRI type. 
-                 If None, clear all cache files.
-    """
-    cache_dir = './data'
-    if not os.path.exists(cache_dir):
-        return
-    
-    pattern = "preprocessed_data_*.pkl"
-    if mri_type:
-        pattern = f"preprocessed_data_{mri_type}_*.pkl"
-    
-    cache_files = glob.glob(os.path.join(cache_dir, pattern))
-    
-    if not cache_files:
-        print("🧹 No cache files found to clear.")
-        return
-    
-    for cache_file in cache_files:
-        try:
-            os.remove(cache_file)
-            print(f"🗑️ Removed cache file: {os.path.basename(cache_file)}")
-        except Exception as e:
-            print(f"❌ Error removing {cache_file}: {e}")
-    
-    print(f"✅ Cache cleanup completed. Removed {len(cache_files)} files.")
-
 def load_rsna_data_with_cache(data_path=DATA_PATH, mri_type=MRI_TYPE, split="train"):
     """
     Load RSNA-MICCAI dataset with caching support for preprocessed data.
@@ -263,9 +232,19 @@ def load_rsna_data(data_path=DATA_PATH, mri_type=MRI_TYPE, split="train"):
     Load RSNA-MICCAI dataset with proper DICOM image loading.
     """
     try:
+        # Check if data directory exists
+        if not os.path.exists(data_path):
+            print(f"Data directory not found: {data_path}")
+            return None, None, None
+            
         # Load labels
         if split == "train":
-            labels_df = pd.read_csv(os.path.join(data_path, 'train_labels.csv'))
+            labels_file = os.path.join(data_path, 'train_labels.csv')
+            if not os.path.exists(labels_file):
+                print(f"Training labels file not found: {labels_file}")
+                return None, None, None
+                
+            labels_df = pd.read_csv(labels_file)
             # Exclude problematic samples as done in original project
             labels_df = labels_df[~labels_df['BraTS21ID'].isin(EXCLUDE_SAMPLES)]
             # Format IDs with leading zeros
@@ -273,27 +252,54 @@ def load_rsna_data(data_path=DATA_PATH, mri_type=MRI_TYPE, split="train"):
             X_ids = labels_df['BraTS21ID_formatted'].values
             y = labels_df['MGMT_value'].values
         else:  # test split
-            test_df = pd.read_csv(os.path.join(data_path, 'sample_submission.csv'))
+            submission_file = os.path.join(data_path, 'sample_submission.csv')
+            if not os.path.exists(submission_file):
+                print(f"Submission file not found: {submission_file}")
+                return None, None, None
+                
+            test_df = pd.read_csv(submission_file)
             test_df['BraTS21ID_formatted'] = test_df['BraTS21ID'].apply(lambda x: f"{x:05d}")
             X_ids = test_df['BraTS21ID_formatted'].values
             y = None
+            
         # Load images for each patient
         X_images = []
+        failed_patients = []
         print(f"Loading {len(X_ids)} patients from {split} set...")
+        
         for patient_id in tqdm(X_ids):
             patient_images = load_dicom_images_sequence(
                 patient_id, num_imgs=NUM_SLICES, mri_type=mri_type, 
                 split=split, data_path=data_path
             )
-            X_images.append(patient_images)
+            
+            # Check if images were loaded successfully
+            if patient_images is not None and not np.all(patient_images == 0):
+                X_images.append(patient_images)
+            else:
+                failed_patients.append(patient_id)
+                print(f"Warning: Failed to load images for patient {patient_id}")
+        
+        if len(failed_patients) > 0:
+            print(f"Failed to load {len(failed_patients)} patients: {failed_patients[:10]}...")
+            # Remove corresponding labels for failed patients
+            if y is not None:
+                successful_indices = [i for i, pid in enumerate(X_ids) if pid not in failed_patients]
+                y = y[successful_indices]
+                X_ids = X_ids[successful_indices]
+        
+        if len(X_images) == 0:
+            print("No patients loaded successfully.")
+            return None, None, None
+            
         X_images = np.array(X_images)
-        print(f"Loaded {len(X_images)} patients with shape: {X_images.shape}")
+        print(f"Successfully loaded {len(X_images)} patients with shape: {X_images.shape}")
         return X_images, y, X_ids
+        
     except Exception as e:
         print(f"Error loading RSNA data: {e}")
-        print("Could not load the dataset. Aborting execution.")
-        import sys
-        sys.exit(1)
+        print("Could not load the dataset.")
+        return None, None, None
 
 # Data Preprocessing - 4 Phase RSNA-MICCAI Methodology
 def is_completely_black_image(img, black_threshold=0.01):
@@ -301,7 +307,7 @@ def is_completely_black_image(img, black_threshold=0.01):
     Phase 1: Determine if an image is completely black (no diagnostic information).
     
     Args:
-        img: 2D MRI slice
+        img: MRI slice (single slice from 3D volume)
         black_threshold: Threshold for considering image as black
         
     Returns:
@@ -319,7 +325,7 @@ def resize_with_padding(img, target_size=512):
     Phase 2: Resize image to 512x512 with proper padding for smaller images.
     
     Args:
-        img: 2D image array
+        img: Image array (single slice from 3D volume)
         target_size: Target size (512x512)
         
     Returns:
@@ -356,7 +362,7 @@ def calculate_information_content(img):
     Phase 4: Calculate information content using binary mask methodology.
     
     Args:
-        img: 2D MRI slice (normalized to 0-1 range)
+        img: MRI slice (single slice from 3D volume, normalized to 0-1 range)
         
     Returns:
         float: Information content score (area of non-zero pixels after binary conversion)
@@ -540,26 +546,6 @@ def build_cnn_model():
     """
     return GBMCNN3D()
 
-def load_existing_model(model_path=None):
-    """
-    Load existing 3D CNN model if available.
-    """
-    if model_path is None:
-        model_path = os.path.join(MODELS_PATH, 'gbm_v5.pt')
-    
-    try:
-        if os.path.exists(model_path):
-            model = build_cnn_model()  # This now returns GBMCNN3D
-            model.load_state_dict(torch.load(model_path, map_location='cpu'))
-            print(f"Loaded existing 3D CNN model from: {model_path}")
-            return model
-        else:
-            print(f"No existing model found at: {model_path}")
-            return None
-    except Exception as e:
-        print(f"Error loading existing model: {e}")
-        return None
-
 # Training with 5-Fold Cross-Validation
 def train_model(X_train, y_train):
     """
@@ -580,6 +566,18 @@ def train_model(X_train, y_train):
     # Convert to float32 to save memory (half the memory of float64)
     X_train = X_train.astype(np.float32)
     y_train = y_train.astype(np.float32)
+    
+    # Validate input shapes
+    if len(X_train.shape) != 4:
+        raise ValueError(f"Expected 4D input (patients, slices, height, width), got shape: {X_train.shape}")
+    if X_train.shape[1] != NUM_SLICES:
+        raise ValueError(f"Expected {NUM_SLICES} slices per patient, got {X_train.shape[1]}")
+    if X_train.shape[2] != IMAGE_SIZE or X_train.shape[3] != IMAGE_SIZE:
+        raise ValueError(f"Expected {IMAGE_SIZE}x{IMAGE_SIZE} images, got {X_train.shape[2]}x{X_train.shape[3]}")
+    
+    print(f"Training data shape: {X_train.shape}")
+    print(f"Labels shape: {y_train.shape}")
+    print(f"Training on {len(X_train)} patients")
     
     # Check for CUDA availability
     device = torch.device('cuda' if (torch.cuda.is_available() and USE_CUDA) else 'cpu')
@@ -692,31 +690,36 @@ def train_model(X_train, y_train):
                 best_fold_val_loss = val_loss
                 patience_counter = 0
                 # Save best model state for this fold
-                best_fold_model_state = model.state_dict().copy()
+                best_fold_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             else:
                 patience_counter += 1
                 if patience_counter >= PATIENCE:
                     print(f"Early stopping at epoch {epoch + 1}")
-                    model.load_state_dict(best_fold_model_state)
+                    # Load best model state
+                    model.load_state_dict({k: v.to(device) for k, v in best_fold_model_state.items()})
                     break
             
             if epoch % 10 == 0:
                 print(f"Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc (patient): {train_acc:.4f}, "
                       f"Val Loss: {val_loss:.4f}, Val Acc (patient): {val_acc:.4f}")
         
+        # Ensure we have a valid model state
+        if 'best_fold_model_state' not in locals():
+            best_fold_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+        
         # Check if this fold's model is the best overall
         if best_fold_val_loss < best_val_loss:
             best_val_loss = best_fold_val_loss
             best_model = build_cnn_model()
+            best_model.to(device)
             
             # Initialize fc1 and fc2 layers by doing a dummy forward pass
-            # This ensures both layers exist before loading the state dict
-            best_model.to(device)  # Move model to device first
             with torch.no_grad():
-                dummy_input = torch.randn(1, 1, 512, 512).to(device)
-                _ = best_model(dummy_input)  # This will create the fc1 and fc2 layers
+                dummy_input = torch.randn(1, 1, 8, 512, 512).to(device)  # 3D input shape
+                _ = best_model(dummy_input)
             
-            best_model.load_state_dict(best_fold_model_state)
+            # Load the best state dict
+            best_model.load_state_dict({k: v.to(device) for k, v in best_fold_model_state.items()})
             best_model = best_model.to('cpu')  # Move to CPU to save GPU memory
         
         # Store history for this fold
@@ -852,6 +855,204 @@ def plot_training_results(histories):
     
     return results_dict
 
+# =============================================================================
+# INFERENCE FUNCTIONS
+# =============================================================================
+
+def load_trained_model(model_path=None):
+    """
+    Load a trained CNN model for inference.
+    """
+    if model_path is None:
+        # Try different model paths
+        possible_paths = [
+            os.path.join(MODELS_PATH, 'gbm_cnn_pytorch.pth'),
+            os.path.join(MODELS_PATH, 'gbm_v5.pt'),
+            os.path.join(MODELS_PATH, 'gbm_cnn_complete.pth')
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                model_path = path
+                break
+    
+    if model_path is None or not os.path.exists(model_path):
+        raise FileNotFoundError("No trained model found. Please train a model first.")
+    
+    # Determine device
+    device = torch.device('cuda' if (torch.cuda.is_available() and USE_CUDA) else 'cpu')
+    
+    # Load model
+    try:
+        if model_path.endswith('_complete.pth'):
+            # Load complete model
+            model = torch.load(model_path, map_location=device)
+        else:
+            # Load state dict - use GBMCNN3D for 3D models
+            model = build_cnn_model()  # This returns GBMCNN3D
+            model.load_state_dict(torch.load(model_path, map_location=device))
+        
+        model = model.to(device)
+        model.eval()
+        print(f"Successfully loaded model from: {model_path}")
+        return model, device
+        
+    except Exception as e:
+        raise Exception(f"Error loading model: {e}")
+
+def predict_patient_3d(model, patient_data, device):
+    """
+    Make prediction for a single patient using 3D CNN.
+    
+    Args:
+        model: Trained 3D CNN model
+        patient_data: Preprocessed patient data (8, 512, 512)
+        device: Computing device
+    
+    Returns:
+        prediction_prob: Probability of GBM (float)
+    """
+    model.eval()
+    
+    with torch.no_grad():
+        # Prepare data for 3D CNN: (batch, 1, 8, 512, 512)
+        patient_tensor = torch.FloatTensor(patient_data).unsqueeze(0).unsqueeze(0).to(device)  # (1, 1, 8, 512, 512)
+        
+        # Get prediction (single value for the patient)
+        prediction = model(patient_tensor).cpu().numpy().flatten()[0]
+        
+    return prediction
+
+
+
+def predict_from_dicom(model, patient_id, device, data_path=DATA_PATH, mri_type=MRI_TYPE):
+    """
+    Make prediction directly from DICOM files using 3D CNN.
+    
+    Args:
+        model: Trained 3D CNN model
+        patient_id: Patient ID (string, e.g., "00046")
+        device: Computing device
+        data_path: Path to RSNA dataset
+        mri_type: Type of MRI sequence
+    
+    Returns:
+        prediction_prob: Probability of GBM
+    """
+    # Load DICOM images
+    patient_images = load_dicom_images_sequence(
+        patient_id, num_imgs=NUM_SLICES, mri_type=mri_type, 
+        split="train", data_path=data_path
+    )
+    
+    # Preprocess
+    processed_images = preprocess_images(
+        np.expand_dims(patient_images, 0), 
+        slices_per_patient=NUM_SLICES
+    )[0]  # Remove batch dimension
+    
+    # Make prediction using 3D model
+    prediction_prob = predict_patient_3d(model, processed_images, device)
+    
+    return prediction_prob
+
+def visualize_prediction(patient_data, prediction_prob, patient_id=None):
+    """
+    Visualize patient slices with overall prediction.
+    
+    Args:
+        patient_data: Patient's 8 MRI slices (8, 512, 512)
+        prediction_prob: Overall GBM probability for the patient
+        patient_id: Optional patient ID for display
+    """
+    num_slices = len(patient_data)
+    cols = 4
+    rows = (num_slices + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(15, rows * 3))
+    if rows == 1:
+        axes = axes.reshape(1, -1)
+    
+    for i in range(num_slices):
+        row = i // cols
+        col = i % cols
+        
+        axes[row, col].imshow(patient_data[i], cmap='gray')
+        axes[row, col].set_title(f'Slice {i+1}')
+        axes[row, col].axis('off')
+    
+    # Hide unused subplots
+    for i in range(num_slices, rows * cols):
+        row = i // cols
+        col = i % cols
+        axes[row, col].axis('off')
+    
+    title = f'Patient {patient_id} - ' if patient_id else ''
+    title += f'Overall GBM Probability: {prediction_prob:.3f}'
+    fig.suptitle(title, fontsize=16, fontweight='bold')
+    
+    plt.tight_layout()
+    return fig
+
+def batch_inference(model, device, data_path=DATA_PATH, mri_type=MRI_TYPE, max_patients=10):
+    """
+    Perform inference on multiple patients and save results.
+    """
+    # Try to load patient IDs from train labels
+    try:
+        labels_df = pd.read_csv(os.path.join(data_path, 'train_labels.csv'))
+        labels_df = labels_df[~labels_df['BraTS21ID'].isin(EXCLUDE_SAMPLES)]
+        patient_ids = labels_df['BraTS21ID'].apply(lambda x: f"{x:05d}").values[:max_patients]
+        true_labels = labels_df['MGMT_value'].values[:max_patients]
+    except:
+        print("Could not load patient labels. Using sample patient IDs.")
+        patient_ids = [f"{i:05d}" for i in range(46, 46 + max_patients)]  # Sample IDs
+        true_labels = None
+    
+    results = []
+    print(f"Running inference on {len(patient_ids)} patients...")
+    
+    for i, patient_id in enumerate(patient_ids):
+        try:
+            pred_prob = predict_from_dicom(
+                model, patient_id, device, data_path, mri_type
+            )
+            
+            result = {
+                'patient_id': patient_id,
+                'prediction_probability': pred_prob,
+                'prediction_binary': int(pred_prob > 0.5),
+            }
+            
+            if true_labels is not None:
+                result['true_label'] = int(true_labels[i])
+                result['correct'] = (result['prediction_binary'] == result['true_label'])
+            
+            results.append(result)
+            print(f"Patient {patient_id}: {pred_prob:.3f} (predicted: {'GBM' if pred_prob > 0.5 else 'No GBM'})")
+            
+        except Exception as e:
+            print(f"Error processing patient {patient_id}: {e}")
+            continue
+    
+    # Save results
+    from config import FIGURES_PATH
+    results_path = os.path.join(FIGURES_PATH, 'inference_results.json')
+    
+    import json
+    with open(results_path, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print(f"Inference results saved to: {results_path}")
+    
+    # Calculate accuracy if true labels available
+    if true_labels is not None:
+        correct_predictions = sum(1 for r in results if r.get('correct', False))
+        accuracy = correct_predictions / len(results)
+        print(f"Accuracy: {accuracy:.3f} ({correct_predictions}/{len(results)})")
+    
+    return results
+
 # IMPORTANT NOTE ON 3D CNN ARCHITECTURE:
 # ====================================
 # This implementation uses a 3D CNN that processes the complete 8-slice volume
@@ -864,92 +1065,3 @@ def plot_training_results(histories):
 #
 # Input shape: (batch_size, 1, 8, 512, 512) - 1 channel, 8 slices, 512x512 each
 # Output shape: (batch_size, 1) - Single probability per patient
-
-
-
-def check_dependencies():
-    """
-    Check and validate all required dependencies.
-    """
-    print("Checking required packages...")
-    missing_deps = []
-    
-    # Core dependencies check
-    dependencies = {
-        'torch': 'PyTorch',
-        'numpy': 'NumPy', 
-        'pandas': 'Pandas',
-        'sklearn': 'Scikit-learn',
-        'matplotlib': 'Matplotlib',
-        'cv2': 'OpenCV',
-        'pydicom': 'PyDicom',
-        'tqdm': 'TQDM'
-    }
-    
-    # Force flush after each print to ensure immediate output
-    import sys
-    
-    for module, name in dependencies.items():
-        try:
-            if module == 'sklearn':
-                import sklearn
-            elif module == 'cv2':
-                import cv2
-            else:
-                __import__(module)
-            print(f"  {name}: OK")
-            sys.stdout.flush()  # Force immediate output
-        except ImportError as e:
-            print(f"  {name}: MISSING")
-            sys.stdout.flush()  # Force immediate output
-            missing_deps.append(name)
-    
-    # Special check for tqdm.auto (used by huggingface_hub)
-    try:
-        from tqdm.auto import tqdm as tqdm_auto
-        print("  tqdm.auto: OK")
-        sys.stdout.flush()  # Force immediate output
-    except ImportError:
-        print("  tqdm.auto: MISSING")
-        sys.stdout.flush()  # Force immediate output
-        missing_deps.append('tqdm.auto')
-    
-    if missing_deps:
-        print(f"\nMissing dependencies: {', '.join(missing_deps)}")
-        print("Please install missing packages using:")
-        print("pip install -r requirements.txt")
-        return False
-    else:
-        print("\nAll required packages are installed!")
-        return True
-
-def get_training_summary():
-    """
-    Print a summary of the training configuration and methodology.
-    This helps ensure the implementation matches the paper's approach.
-    """
-    print("="*80)
-    print("GLIOBLASTOMA 3D CNN TRAINING CONFIGURATION")
-    print("="*80)
-    
-    # Check dependencies first
-    deps_ok = check_dependencies()
-    
-    print()
-    print("Model Architecture: 5-layer 3D CNN with dynamic FC layers")
-    print("Data Input: 3D volumes (1, 8, 512, 512) - 8 slices per patient")
-    print("Data Preprocessing: 4-Phase RSNA-MICCAI methodology")
-    print("Image Normalization: Division by 255 (as per paper)")
-    print("Output: Single prediction per patient (no aggregation needed)")
-    print("Training Accuracy: Patient-level (one prediction per volume)")
-    print("Validation Accuracy: Patient-level (one prediction per volume)")
-    print("Cross-Validation: 5-fold with early stopping")
-    print("Target Performance: ~61% ± 0.3 patient-level accuracy")
-    
-    if not deps_ok:
-        print("\n WARNINGS: Some dependencies are missing!")
-        print("   Please install all requirements before training.")
-    
-    print("="*80)
-    
-    return deps_ok
