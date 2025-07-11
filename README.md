@@ -63,6 +63,17 @@ All project setup, troubleshooting, and maintenance is fully automated. Use the 
   > chmod +x run_project.sh
   > ```
 
+### GPU Memory Optimization
+
+⚠️ **VRAM Memory Issues:** If you encounter out-of-memory errors during training, you can reduce the batch size in the `config.py` file:
+
+- For example, **For 12GB GPUs:** Recommended batch size is **16**.
+
+To modify the batch size, edit the `BATCH_SIZE` parameter in `config.py`:
+```python
+BATCH_SIZE = 16  # Adjust based on your GPU memory
+```
+
 ### Troubleshooting & Utilities (in `scripts/`)
 - **Check system health:**
   ```bat
