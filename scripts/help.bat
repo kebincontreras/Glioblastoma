@@ -49,8 +49,4 @@ echo   Get detailed diagnostics:
 echo     scripts\diagnose.bat
 echo.
 
-echo ============================================
-echo   For more information, see: SCRIPT_USAGE.md
-echo ============================================
-
 pause

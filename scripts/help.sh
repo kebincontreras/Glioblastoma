@@ -57,7 +57,3 @@ echo ""
 echo "  Get detailed diagnostics:"
 echo "    ./scripts/diagnose.sh"
 echo ""
-
-echo -e "${BLUE}============================================${NC}"
-echo -e "${BLUE}  For more information, see: SCRIPT_USAGE.md${NC}"
-echo -e "${BLUE}============================================${NC}"
