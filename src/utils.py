@@ -626,8 +626,13 @@ def train_model(X_train, y_train):
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
         
+        print(f"  Created data loaders - Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
+        print(f"  Train data shape: {X_tr_tensor.shape}, Val data shape: {X_val_tensor.shape}")
+        
         # Initialize model
         model = build_cnn_model().to(device)
+        print(f"  Model initialized and moved to {device}")
+        
         criterion = nn.BCELoss()
         optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
         
@@ -639,69 +644,105 @@ def train_model(X_train, y_train):
         best_fold_val_loss = float('inf')
         patience_counter = 0
         
-        for epoch in range(MAX_EPOCHS):
-            # Training phase
-            model.train()
-            train_loss = 0.0
-            train_correct = 0
-            train_total = 0
-            
-            for batch_X, batch_y in train_loader:
-                optimizer.zero_grad()
-                outputs = model(batch_X)
-                loss = criterion(outputs, batch_y)
-                loss.backward()
-                optimizer.step()
+        try:
+            for epoch in range(MAX_EPOCHS):
+                print(f"  Starting epoch {epoch + 1}/{MAX_EPOCHS}...")
                 
-                train_loss += loss.item()
-                predicted = (outputs > 0.5).float()
-                train_total += batch_y.size(0)
-                train_correct += (predicted == batch_y).sum().item()
-            
-            # Validation phase
-            model.eval()
-            val_loss = 0.0
-            val_correct = 0
-            val_total = 0
-            
-            with torch.no_grad():
-                for batch_X, batch_y in val_loader:
-                    outputs = model(batch_X)
-                    loss = criterion(outputs, batch_y)
+                # Training phase
+                model.train()
+                train_loss = 0.0
+                train_correct = 0
+                train_total = 0
+                
+                print(f"  Training phase - processing {len(train_loader)} batches...")
+                batch_count = 0
+                for batch_X, batch_y in train_loader:
+                    batch_count += 1
+                    if batch_count == 1:
+                        print(f"    Processing first batch - shape: {batch_X.shape}")
                     
-                    val_loss += loss.item()
-                    predicted = (outputs > 0.5).float()
-                    val_total += batch_y.size(0)
-                    val_correct += (predicted == batch_y).sum().item()
-            
-            # Calculate metrics (both are now patient-level with 3D CNN)
-            train_loss /= len(train_loader)
-            val_loss /= len(val_loader)
-            train_acc = train_correct / train_total  # Patient-level accuracy (3D CNN)
-            val_acc = val_correct / val_total        # Patient-level accuracy (3D CNN)
-            
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
-            train_accuracies.append(train_acc)   # Patient-level for training
-            val_accuracies.append(val_acc)       # Patient-level for validation
-            
-            # Early stopping and best model tracking
-            if val_loss < best_fold_val_loss:
-                best_fold_val_loss = val_loss
-                patience_counter = 0
-                # Save best model state for this fold
-                best_fold_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-            else:
-                patience_counter += 1
-                if patience_counter >= PATIENCE:
-                    print(f"Early stopping at epoch {epoch + 1}")
-                    # Load best model state
-                    model.load_state_dict({k: v.to(device) for k, v in best_fold_model_state.items()})
-                    break
-            
-            if epoch % 10 == 0:
-                print(f"Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc (patient): {train_acc:.4f}, "
-                      f"Val Loss: {val_loss:.4f}, Val Acc (patient): {val_acc:.4f}")
+                    try:
+                        optimizer.zero_grad()
+                        outputs = model(batch_X)
+                        loss = criterion(outputs, batch_y)
+                        loss.backward()
+                        optimizer.step()
+                        
+                        train_loss += loss.item()
+                        predicted = (outputs > 0.5).float()
+                        train_total += batch_y.size(0)
+                        train_correct += (predicted == batch_y).sum().item()
+                        
+                        if batch_count <= 3:
+                            print(f"    Batch {batch_count} completed - loss: {loss.item():.4f}")
+                    except Exception as e:
+                        print(f"    Error in training batch {batch_count}: {e}")
+                        raise e
+                
+                print(f"  Training phase completed. Avg loss: {train_loss/len(train_loader):.4f}")
+                
+                # Validation phase
+                model.eval()
+                val_loss = 0.0
+                val_correct = 0
+                val_total = 0
+                
+                print(f"  Validation phase - processing {len(val_loader)} batches...")
+                
+                with torch.no_grad():
+                    for batch_X, batch_y in val_loader:
+                        outputs = model(batch_X)
+                        loss = criterion(outputs, batch_y)
+                        
+                        val_loss += loss.item()
+                        predicted = (outputs > 0.5).float()
+                        val_total += batch_y.size(0)
+                        val_correct += (predicted == batch_y).sum().item()
+                
+                print(f"  Validation phase completed. Avg loss: {val_loss/len(val_loader):.4f}")
+                
+                # Calculate metrics (both are now patient-level with 3D CNN)
+                train_loss /= len(train_loader)
+                val_loss /= len(val_loader)
+                train_acc = train_correct / train_total  # Patient-level accuracy (3D CNN)
+                val_acc = val_correct / val_total        # Patient-level accuracy (3D CNN)
+                
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+                train_accuracies.append(train_acc)   # Patient-level for training
+                val_accuracies.append(val_acc)       # Patient-level for validation
+                
+                # Print progress every epoch for debugging
+                print(f"  Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, "
+                      f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+                
+                # Early stopping and best model tracking
+                if val_loss < best_fold_val_loss:
+                    best_fold_val_loss = val_loss
+                    patience_counter = 0
+                    # Save best model state for this fold
+                    best_fold_model_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                    print(f"  New best validation loss: {val_loss:.4f}")
+                else:
+                    patience_counter += 1
+                    print(f"  No improvement. Patience: {patience_counter}/{PATIENCE}")
+                    if patience_counter >= PATIENCE:
+                        print(f"Early stopping at epoch {epoch + 1}")
+                        # Load best model state
+                        model.load_state_dict({k: v.to(device) for k, v in best_fold_model_state.items()})
+                        break
+                
+                # Print summary at epochs 1, 10, 20, 30, etc.
+                if (epoch + 1) % 10 == 0 or epoch == 0:
+                    print(f"  *** Summary Epoch {epoch + 1}/{MAX_EPOCHS} - Train Loss: {train_loss:.4f}, Train Acc (patient): {train_acc:.4f}, "
+                          f"Val Loss: {val_loss:.4f}, Val Acc (patient): {val_acc:.4f} ***")
+        
+        except Exception as e:
+            print(f"  ERROR in training loop: {e}")
+            print(f"  Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            raise e
         
         # Ensure we have a valid model state
         if 'best_fold_model_state' not in locals():
@@ -746,7 +787,7 @@ def train_model(X_train, y_train):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
-        print(f"Fold {fold + 1} completed. Memory cleaned up.")
+        print(f"Fold {fold + 1}.")
     
     # Move best model back to device for final return
     if best_model is not None:
